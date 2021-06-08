@@ -29,8 +29,10 @@ import com.hierynomus.mssmb2.SMB2FileId;
 import com.hierynomus.mssmb2.SMB2ImpersonationLevel;
 import com.hierynomus.mssmb2.SMB2ShareAccess;
 import com.hierynomus.mssmb2.messages.*;
+import com.hierynomus.smbj.SmbConfig;
 import com.hierynomus.smbj.common.SMBRuntimeException;
 import com.hierynomus.smbj.common.SmbPath;
+import com.hierynomus.smbj.connection.NegotiatedProtocol;
 import com.hierynomus.smbj.io.ArrayByteChunkProvider;
 import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.share.PipeShare;
@@ -48,17 +50,30 @@ public class NamedPipe extends SMB2SessionMessage implements Closeable {
     private final int writeBufferSize;
 
     public NamedPipe(final Session session, final PipeShare share, final String name) throws IOException {
-        super(session);
-
+        super(session, share.getTreeConnect().getConfig());
         this.share = share;
 
-        final SMB2CreateRequest createRequest = new SMB2CreateRequest(session.getConnection().getNegotiatedProtocol().getDialect(), session.getSessionId(), share.getTreeConnect().getTreeId(), SMB2ImpersonationLevel.Impersonation, EnumSet.of(AccessMask.MAXIMUM_ALLOWED), null, EnumSet.of(SMB2ShareAccess.FILE_SHARE_READ, SMB2ShareAccess.FILE_SHARE_WRITE), SMB2CreateDisposition.FILE_OPEN_IF, null, new SmbPath(share.getSmbPath(), name));
+        NegotiatedProtocol negotiatedProtocol = session.getConnection().getNegotiatedProtocol();
+        final SMB2CreateRequest createRequest = new SMB2CreateRequest(
+                negotiatedProtocol.getDialect(),
+                session.getSessionId(),
+                share.getTreeConnect().getTreeId(),
+                SMB2ImpersonationLevel.Impersonation,
+                EnumSet.of(AccessMask.MAXIMUM_ALLOWED),
+                null,
+                EnumSet.of(SMB2ShareAccess.FILE_SHARE_READ, SMB2ShareAccess.FILE_SHARE_WRITE),
+                SMB2CreateDisposition.FILE_OPEN_IF,
+                null,
+                new SmbPath(share.getSmbPath(), name)
+        );
         final SMB2CreateResponse createResponse = sendAndRead(createRequest, EnumSet.of(NtStatus.STATUS_SUCCESS));
 
         fileID = createResponse.getFileId();
-        transactBufferSize = Math.min(session.getConnection().getConfig().getTransactBufferSize(), session.getConnection().getNegotiatedProtocol().getMaxTransactSize());
-        readBufferSize = Math.min(session.getConnection().getConfig().getReadBufferSize(), session.getConnection().getNegotiatedProtocol().getMaxReadSize());
-        writeBufferSize = Math.min(session.getConnection().getConfig().getWriteBufferSize(), session.getConnection().getNegotiatedProtocol().getMaxWriteSize());
+
+        SmbConfig smbConfig = share.getTreeConnect().getConfig();
+        transactBufferSize = Math.min(smbConfig.getTransactBufferSize(), negotiatedProtocol.getMaxTransactSize());
+        readBufferSize = Math.min(smbConfig.getReadBufferSize(), negotiatedProtocol.getMaxReadSize());
+        writeBufferSize = Math.min(smbConfig.getWriteBufferSize(), negotiatedProtocol.getMaxWriteSize());
     }
 
     public byte[] transact(final byte[] inBuffer) throws IOException {
